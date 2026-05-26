@@ -1,0 +1,205 @@
+generator client {
+  provider      = "prisma-client"
+  output        = "../src/generated/prisma"
+  moduleFormat  = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+
+
+
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  ASSISTANT
+  COACH
+  PARENT
+  ATHLETE
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+  SUSPENDED
+  BLOCKED
+}
+
+enum FileType {
+  PROFILE_IMAGE
+  DNI_PDF
+  MEDICAL_RECORD
+  CONTRACT
+  OTHER
+}
+
+
+
+
+
+model User {
+  id                    String              @id @default(uuid())
+
+  
+  
+  
+  username              String              @unique
+  password              String              
+
+  
+  
+  
+
+  name                  String?
+  lastname              String?
+  dni                   String?
+
+  gender                Gender?
+
+  birthDate             DateTime?          
+
+  phone                 String?
+
+  address               String?
+
+  
+  
+  
+
+  status                UserStatus          @default(PENDING)
+
+  
+  
+  
+
+  lastLoginAt           DateTime?          
+
+  failedLoginAttempts   Int                 @default(0)
+
+  blockedUntil          DateTime?          
+
+  
+  
+  
+
+  roles                 UserRole[]
+
+  assignments           UserAssignment[]
+
+  files                 UserFile[]
+
+  
+  
+  
+
+  createdAt             DateTime            @default(now())
+
+  updatedAt             DateTime            @updatedAt
+
+  available             Boolean             @default(true)
+
+  
+  
+  
+
+  @@index([status])
+
+  @@index([available])
+
+  @@map("users")
+}
+
+
+
+
+
+model UserRole {
+  id            String      @id @default(uuid())
+
+  userId        String     
+
+  role          Role
+
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime    @default(now())
+
+  @@unique([userId, role])
+
+  @@index([role])
+
+  @@map("user_roles")
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+  REMOVED
+}
+
+model UserAssignment {
+  id              String              @id @default(uuid())
+
+  userId          String             
+
+  assignmentId    String             
+
+  status          MembershipStatus    @default(ACTIVE)
+
+  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt       DateTime            @default(now())
+
+  updatedAt       DateTime            @updatedAt
+
+  available       DateTime?          
+
+  @@unique([userId, assignmentId])
+
+  @@index([assignmentId])
+
+  @@index([status])
+
+  @@index([available])
+
+  @@map("user_assignments")
+}
+
+
+
+
+
+model UserFile {
+  id            String      @id @default(uuid())
+
+  userId        String     
+
+  type          FileType
+
+  url           String
+
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime    @default(now())
+
+  updatedAt     DateTime    @updatedAt
+
+  available     Boolean     @default(true)
+
+  @@index([type])
+  @@index([available])
+
+  @@map("user_files")
+}
