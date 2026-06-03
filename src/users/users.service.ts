@@ -62,9 +62,33 @@ export class UsersService extends PrismaClient {
 
   async findAll(paginationDto: PaginationDto) {
     try {
-      const { page = 1, limit = 10 } = paginationDto;
+      const { page = 1, limit = 10, role, search } = paginationDto;
+
+      const whereCondition: any = {
+        available: true,
+      };
+
+      if (role) {
+        whereCondition.roles = {
+          some: {
+            role: role,
+          },
+        };
+      }
+
+      if (search) {
+        whereCondition.OR = [
+          { username: { contains: search, mode: 'insensitive' } },
+          { name: { contains: search, mode: 'insensitive' } },
+          { lastname: { contains: search, mode: 'insensitive' } },
+          { dni: { contains: search, mode: 'insensitive' } },
+          { phone: { contains: search, mode: 'insensitive' } },
+          { address: { contains: search, mode: 'insensitive' } },
+        ];
+      }
+
       const totalPage = await this.user.count({
-        where: { available: true },
+        where: whereCondition,
       });
 
       const lastPage = Math.ceil(totalPage / limit);
@@ -73,8 +97,8 @@ export class UsersService extends PrismaClient {
         data: await this.user.findMany({
           skip: (page - 1) * limit,
           take: limit,
-          where: { available: true },
-          include: { assignments: true },
+          where: whereCondition,
+          include: { assignments: true, roles: true },
         }),
         meta: {
           total: totalPage,
