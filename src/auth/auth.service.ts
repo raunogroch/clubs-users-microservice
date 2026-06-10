@@ -1,40 +1,35 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { LoginDto, RegisterDto } from './dto';
-import { PrismaClient, Role } from '../generated/prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { envs, NATS_SERVICE } from '../config';
+import { NATS_SERVICE, envs } from '../config';
 import { ClientProxy, RpcException } from '@nestjs/microservices';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { JwtPayload } from './interfaces/jwt-payload.interfaces';
 import { Roles } from '../common';
+import { AuthRepository } from './auth.repository';
 
 @Injectable()
-export class AuthService extends PrismaClient {
+export class AuthService {
   constructor(
+    private readonly authRepository: AuthRepository,
     @Inject(NATS_SERVICE) private readonly client: ClientProxy,
     private readonly jwtService: JwtService,
-  ) {
-    const adapter = new PrismaPg(envs.databaseUrl);
-    super({ adapter });
-  }
+  ) {}
 
   async register(registerDto: RegisterDto) {
-    try {      
-      const existingUser = await this.user.findFirst({
-      where: { username: registerDto.username },
-    });
-    if (existingUser) {
-      throw new RpcException('Username already exists');
-    }
+    try {
+      const existingUser = await this.authRepository.findByUsername(
+        registerDto.username,
+      );
+      if (existingUser) {
+        throw new RpcException('Username already exists');
+      }
 
+      const rolesToCreate = Array.from(
+        new Set(registerDto.roles ?? [Roles.ATHLETE]),
+      );
 
-    const rolesToCreate = Array.from(
-      new Set(registerDto.roles ?? [Roles.ATHLETE]),
-    );
-
-    const userNew = await this.user.create({
-      data: {
+      const userNew = await this.authRepository.create({
         name: registerDto.name,
         lastname: registerDto.lastname,
         username: registerDto.username,
@@ -45,41 +40,36 @@ export class AuthService extends PrismaClient {
             role,
           })),
         },
-      },
-      include: {
-        roles: true,
-      },
-    });
+      });
 
-    return {
-      user: {
-        id: userNew.id,
-        name: userNew.name,
-        lastname: userNew.lastname,
-        username: userNew.username,
-        roles: userNew.roles.map((role) => role.role),
-      },
-      token: await this.signJWT({
-        id: userNew.id,
-        name: userNew.name || '',
-        lastname: userNew.lastname || '',
-        username: userNew.username,
-        roles: userNew.roles.map((role) => role.role),
-      }),
-    };
+      return {
+        user: {
+          id: userNew.id,
+          name: userNew.name,
+          lastname: userNew.lastname,
+          username: userNew.username,
+          roles: userNew.roles.map((role) => role.role),
+        },
+        token: await this.signJWT({
+          id: userNew.id,
+          name: userNew.name || '',
+          lastname: userNew.lastname || '',
+          username: userNew.username,
+          roles: userNew.roles.map((role) => role.role),
+        }),
+      };
     } catch (err: any) {
       throw new RpcException({
         status: 500,
-        message: err.message 
+        message: err.message,
       });
     }
   }
 
   async login(loginDto: LoginDto) {
-    const existingUser = await this.user.findFirst({
-      where: { username: loginDto.username },
-      include: { roles: true },
-    });
+    const existingUser = await this.authRepository.findByUsernameWithRoles(
+      loginDto.username,
+    );
     if (!existingUser) {
       throw new RpcException({
         status: 400,
@@ -119,14 +109,14 @@ export class AuthService extends PrismaClient {
         name: existingUser.name,
         lastname: existingUser.lastname,
         username: existingUser.username,
-        roles: existingUser.roles.map((role) => role.role)
+        roles: existingUser.roles.map((role) => role.role),
       },
       token: await this.signJWT({
         id: existingUser.id,
         name: existingUser.name || '',
         lastname: existingUser.lastname || '',
         username: existingUser.username,
-        roles: existingUser.roles.map((role) => role.role)
+        roles: existingUser.roles.map((role) => role.role),
       }),
     };
   }

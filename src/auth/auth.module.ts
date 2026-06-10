@@ -4,6 +4,8 @@ import { AuthController } from './auth.controller';
 import { NatsModule } from '../transports/nats.module';
 import { JwtModule } from '@nestjs/jwt';
 import { envs } from '../config';
+import { PrismaService } from '../prisma.service';
+import { AuthRepository } from './auth.repository';
 
 @Module({
   imports: [
@@ -15,6 +17,6 @@ import { envs } from '../config';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService],
+  providers: [AuthService, AuthRepository, PrismaService],
 })
 export class AuthModule {}
