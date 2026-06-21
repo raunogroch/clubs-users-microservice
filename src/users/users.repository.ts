@@ -82,8 +82,6 @@ export class UsersRepository {
     return this.validateUserMembershipByRole(uniqueIds, role);
   }
 
-
-
   // UserMembership operations (new canonical model)
   createUserMembership(
     userId: string,

@@ -50,7 +50,7 @@ export class UsersService {
         for (const membership of memberships) {
           // Use provided assignmentId or null if not provided
           const assignmentId = membership.assignmentId || null;
-          const status = membership.status as any || 'ACTIVE';
+          const status = (membership.status as any) || 'ACTIVE';
 
           const created = await this.usersRepository.createUserMembership(
             createdUser.id,
@@ -85,13 +85,14 @@ export class UsersService {
     const { userMemberships, password, available, ...userData } = user;
     return {
       ...userData,
-      ...(userMemberships && userMemberships.length > 0 && {
-        memberships: userMemberships.map((m) => ({
-          assignmentId: m.assignmentId,
-          role: m.role,
-          status: m.status,
-        })),
-      }),
+      ...(userMemberships &&
+        userMemberships.length > 0 && {
+          memberships: userMemberships.map((m) => ({
+            assignmentId: m.assignmentId,
+            role: m.role,
+            status: m.status,
+          })),
+        }),
     };
   }
 
@@ -119,7 +120,11 @@ export class UsersService {
 
       const lastPage = Math.ceil(totalPage / limit);
 
-      const users = await this.usersRepository.findAll(page, limit, whereCondition);
+      const users = await this.usersRepository.findAll(
+        page,
+        limit,
+        whereCondition,
+      );
       const formattedUsers = users.map((user) => this.formatUserResponse(user));
 
       return {
@@ -157,8 +162,9 @@ export class UsersService {
       // If memberships are provided, update them
       if (memberships && memberships.length > 0) {
         // Get existing memberships to find all assignments
-        const existingMemberships = await this.usersRepository.getUserMemberships(id);
-        
+        const existingMemberships =
+          await this.usersRepository.getUserMemberships(id);
+
         // Delete all existing memberships (handle both null and non-null assignmentIds)
         await this.prisma.userMembership.deleteMany({
           where: { userId: id },
@@ -167,8 +173,8 @@ export class UsersService {
         // Create new memberships
         for (const membership of memberships) {
           const assignmentId = membership.assignmentId || null;
-          const status = membership.status as any || 'ACTIVE';
-          
+          const status = (membership.status as any) || 'ACTIVE';
+
           await this.usersRepository.createUserMembership(
             id,
             assignmentId,
