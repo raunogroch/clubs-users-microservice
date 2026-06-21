@@ -15,7 +15,7 @@ export class UsersRepository {
   create(data: Prisma.UserCreateInput) {
     return this.prisma.user.create({
       data,
-      include: { assignments: true, roles: true },
+      include: { userMemberships: true },
     });
   }
 
@@ -30,14 +30,14 @@ export class UsersRepository {
       skip: (page - 1) * limit,
       take: limit,
       where: whereCondition,
-      include: { assignments: true, roles: true },
+      include: { userMemberships: true },
     });
   }
 
   findById(id: string) {
     return this.prisma.user.findUnique({
       where: { id, available: true },
-      include: { assignments: true, roles: true },
+      include: { userMemberships: true },
     });
   }
 
@@ -45,7 +45,7 @@ export class UsersRepository {
     return this.prisma.user.update({
       where: { id },
       data,
-      include: { assignments: true, roles: true },
+      include: { userMemberships: true },
     });
   }
 
@@ -79,38 +79,93 @@ export class UsersRepository {
 
   validateAdmins(ids: string[], role: $Enums.Role) {
     const uniqueIds = Array.from(new Set(ids));
-    return this.prisma.user.findMany({
-      where: {
-        id: { in: uniqueIds },
-        available: true,
-        roles: {
-          some: {
-            role: role,
-          },
-        },
-      },
-      select: { id: true },
-    });
+    return this.validateUserMembershipByRole(uniqueIds, role);
   }
 
-  findUserAssignment(userId: string, assignmentId: string) {
-    return this.prisma.userAssignment.findFirst({
-      where: { userId, assignmentId },
-    });
-  }
 
-  createUserAssignment(userId: string, assignmentId: string) {
-    return this.prisma.userAssignment.create({
+
+  // UserMembership operations (new canonical model)
+  createUserMembership(
+    userId: string,
+    assignmentId: string | null,
+    role: $Enums.Role,
+    status: $Enums.MembershipStatus = 'ACTIVE',
+  ) {
+    return this.prisma.userMembership.create({
       data: {
+        userId,
+        assignmentId,
+        role,
+        status,
+      },
+    });
+  }
+
+  getUserMemberships(userId: string) {
+    return this.prisma.userMembership.findMany({
+      where: {
+        userId,
+        status: 'ACTIVE',
+      },
+    });
+  }
+
+  getUserMembershipsByAssignment(userId: string, assignmentId: string) {
+    return this.prisma.userMembership.findMany({
+      where: {
+        userId,
+        assignmentId,
+        status: 'ACTIVE',
+      },
+    });
+  }
+
+  // Validate users have a specific role (includes global roles for SUPER_ADMIN/ADMIN)
+  validateUserMembershipByRole(ids: string[], role: $Enums.Role) {
+    const uniqueIds = Array.from(new Set(ids));
+    return this.prisma.userMembership.findMany({
+      where: {
+        userId: { in: uniqueIds },
+        role,
+        status: 'ACTIVE',
+        // For global roles (SUPER_ADMIN, ADMIN), assignmentId can be null
+        // For other roles, assignmentId must be present
+      },
+      select: { userId: true },
+      distinct: ['userId'],
+    });
+  }
+
+  deleteUserMemberships(userId: string, assignmentId: string) {
+    return this.prisma.userMembership.deleteMany({
+      where: {
         userId,
         assignmentId,
       },
     });
   }
 
-  deleteUserAssignment(id: string) {
-    return this.prisma.userAssignment.delete({
-      where: { id },
+  // Find membership with optional assignmentId (for global roles)
+  findUserMembership(userId: string, role: $Enums.Role, assignmentId?: string) {
+    const whereClause: any = {
+      userId,
+      role,
+      status: 'ACTIVE',
+    };
+
+    if (assignmentId) {
+      whereClause.assignmentId = assignmentId;
+    }
+
+    return this.prisma.userMembership.findFirst({
+      where: whereClause,
+    });
+  }
+
+  getUserWithMemberships(id: string) {
+    return this.prisma.user.findUnique({
+      where: { id, available: true },
+      include: { userMemberships: true },
     });
   }
 }

@@ -1,18 +1,18 @@
 import {
   IsArray,
   IsDate,
-  IsEmail,
   IsEnum,
   IsNotEmpty,
   IsOptional,
   IsString,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { Gender, Roles, Status } from '../../common';
+import { MembershipDto } from './membership.dto';
 
 export class CreateUserDto {
-
   @IsString({ message: 'username must be a string' })
   @IsNotEmpty({ message: 'username should not be empty' })
   username!: string;
@@ -59,12 +59,9 @@ export class CreateUserDto {
   })
   status?: Status;
 
-  
   @IsOptional()
   @IsArray()
-  @IsEnum(Roles, {
-    each: true,
-    message: `Roles must be one of: ${Object.values(Roles).join(', ')}`,
-  })
-  roles?: Roles[];
+  @ValidateNested({ each: true })
+  @Type(() => MembershipDto)
+  memberships?: MembershipDto[];
 }

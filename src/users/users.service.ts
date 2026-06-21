@@ -13,11 +13,13 @@ import { PaginationDto, Roles } from '../common';
 import * as bcrypt from 'bcrypt';
 import type { UserRoleValidation } from './interfaces';
 import { UsersRepository } from './users.repository';
+import { PrismaService } from '../prisma.service';
 
 @Injectable()
 export class UsersService {
   constructor(
     private readonly usersRepository: UsersRepository,
+    private readonly prisma: PrismaService,
     @Inject(NATS_SERVICE) private readonly client: ClientProxy,
   ) {}
 
@@ -32,45 +34,74 @@ export class UsersService {
       }
 
       const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
-      const rolesToCreate = Array.from(
-        new Set(
-          createUserDto.roles && createUserDto.roles.length
-            ? createUserDto.roles
-            : [Roles.ATHLETE],
-        ),
-      );
 
-      const { roles, password, ...userFields } = createUserDto;
+      const { memberships, password, ...userFields } = createUserDto;
 
+      // Create user WITHOUT legacy roles
       const createdUser = await this.usersRepository.create({
         ...userFields,
         password: hashedPassword,
-        roles: {
-          create: rolesToCreate.map((role) => ({ role })),
-        },
       });
 
-      return createdUser;
+      // Create memberships if provided
+      let userMemberships: any[] = [];
+
+      if (memberships && memberships.length > 0) {
+        for (const membership of memberships) {
+          // Use provided assignmentId or null if not provided
+          const assignmentId = membership.assignmentId || null;
+          const status = membership.status as any || 'ACTIVE';
+
+          const created = await this.usersRepository.createUserMembership(
+            createdUser.id,
+            assignmentId,
+            membership.role as any,
+            status,
+          );
+
+          userMemberships.push({
+            assignmentId: created.assignmentId,
+            role: created.role,
+            status: created.status,
+          });
+        }
+      }
+
+      // Return user with memberships
+      return {
+        id: createdUser.id,
+        username: createdUser.username,
+        name: createdUser.name,
+        lastname: createdUser.lastname,
+        status: createdUser.status,
+        ...(userMemberships.length > 0 && { memberships: userMemberships }),
+      };
     } catch (err: any) {
       throw new RpcException(err);
     }
   }
 
+  private formatUserResponse(user: any) {
+    const { userMemberships, password, available, ...userData } = user;
+    return {
+      ...userData,
+      ...(userMemberships && userMemberships.length > 0 && {
+        memberships: userMemberships.map((m) => ({
+          assignmentId: m.assignmentId,
+          role: m.role,
+          status: m.status,
+        })),
+      }),
+    };
+  }
+
   async findAll(paginationDto: PaginationDto) {
     try {
-      const { page = 1, limit = 10, role, search } = paginationDto;
+      const { page = 1, limit = 10, search } = paginationDto;
 
       const whereCondition: any = {
         available: true,
       };
-
-      if (role) {
-        whereCondition.roles = {
-          some: {
-            role: role,
-          },
-        };
-      }
 
       if (search) {
         whereCondition.OR = [
@@ -88,8 +119,11 @@ export class UsersService {
 
       const lastPage = Math.ceil(totalPage / limit);
 
+      const users = await this.usersRepository.findAll(page, limit, whereCondition);
+      const formattedUsers = users.map((user) => this.formatUserResponse(user));
+
       return {
-        data: await this.usersRepository.findAll(page, limit, whereCondition),
+        data: formattedUsers,
         meta: {
           total: totalPage,
           page: page,
@@ -108,33 +142,47 @@ export class UsersService {
       throw new RpcException({ message: 'User not found' });
     }
 
-    const { password, createdAt, updatedAt, ...userNew } = userExist;
     return {
-      user: userNew,
+      user: this.formatUserResponse(userExist),
     };
   }
 
   async update(id: string, updateUserDto: UpdateUserDto) {
     try {
-      const rolesToCreate = Array.from(
-        new Set(
-          updateUserDto.roles?.length ? updateUserDto.roles : [Roles.ATHLETE],
-        ),
-      );
-      const { id: __, password: ___, ...data } = updateUserDto;
+      const { id: __, password: ___, memberships, ...data } = updateUserDto;
       await this.findOne(id);
 
-      return this.usersRepository.update(id, {
-        ...data,
-        roles: updateUserDto.roles
-          ? {
-              deleteMany: {},
-              create: rolesToCreate.map((role) => ({
-                role,
-              })),
-            }
-          : undefined,
-      });
+      const updatedUser = await this.usersRepository.update(id, data);
+
+      // If memberships are provided, update them
+      if (memberships && memberships.length > 0) {
+        // Get existing memberships to find all assignments
+        const existingMemberships = await this.usersRepository.getUserMemberships(id);
+        
+        // Delete all existing memberships (handle both null and non-null assignmentIds)
+        await this.prisma.userMembership.deleteMany({
+          where: { userId: id },
+        });
+
+        // Create new memberships
+        for (const membership of memberships) {
+          const assignmentId = membership.assignmentId || null;
+          const status = membership.status as any || 'ACTIVE';
+          
+          await this.usersRepository.createUserMembership(
+            id,
+            assignmentId,
+            membership.role as any,
+            status,
+          );
+        }
+
+        // Fetch updated user with new memberships
+        const finalUser = await this.usersRepository.findById(id);
+        return this.formatUserResponse(finalUser);
+      }
+
+      return this.formatUserResponse(updatedUser);
     } catch (err: any) {
       throw new RpcException(err);
     }
@@ -196,11 +244,11 @@ export class UsersService {
 
   async validateAdmins(data: UserRoleValidation) {
     try {
-      const admins = await this.usersRepository.validateAdmins(
+      const admins = await this.usersRepository.validateUserMembershipByRole(
         data.ids,
         data.role,
       );
-      return admins.map((admin) => admin.id);
+      return admins.map((admin) => admin.userId);
     } catch (err: any) {
       throw new RpcException(err);
     }
@@ -211,12 +259,16 @@ export class UsersService {
       const { userId, assignmentId } = data;
 
       const userExist = await this.usersRepository.findByIdBasic(userId);
-
       if (!userExist) {
         throw new RpcException({ message: 'User not found' });
       }
 
-      await this.usersRepository.createUserAssignment(userId, assignmentId);
+      // Create membership with ATHLETE role (default for assignments)
+      await this.usersRepository.createUserMembership(
+        userId,
+        assignmentId,
+        Roles.ATHLETE,
+      );
 
       return { message: 'Assignment added to user successfully' };
     } catch (err: any) {
@@ -229,21 +281,12 @@ export class UsersService {
       const { userId, assignmentId } = data;
 
       const userExist = await this.usersRepository.findByIdBasic(userId);
-
       if (!userExist) {
         throw new RpcException({ message: 'User not found' });
       }
 
-      const assignment = await this.usersRepository.findUserAssignment(
-        userId,
-        assignmentId,
-      );
-
-      if (!assignment) {
-        throw new RpcException({ message: 'Assignment not found' });
-      }
-
-      await this.usersRepository.deleteUserAssignment(assignment.id);
+      // Delete all memberships for this user-assignment combo
+      await this.usersRepository.deleteUserMemberships(userId, assignmentId);
 
       return { message: 'Assignment removed from user successfully' };
     } catch (err: any) {

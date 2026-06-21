@@ -5,8 +5,11 @@ import {
   IsOptional,
   IsString,
   IsStrongPassword,
+  ValidateNested,
 } from 'class-validator';
 import { Roles, Status } from '../../common';
+import { Type } from 'class-transformer';
+import { MembershipDto } from '../../users/dto/membership.dto';
 
 export class RegisterDto {
   @IsString({ message: 'name must be a string' })
@@ -46,9 +49,7 @@ export class RegisterDto {
 
   @IsOptional()
   @IsArray()
-  @IsEnum(Roles, {
-    each: true,
-    message: `Roles must be one of: ${Object.values(Roles).join(', ')}`,
-  })
-  roles?: Roles[];
+  @ValidateNested({ each: true })
+  @Type(() => MembershipDto)
+  memberships?: MembershipDto[];
 }

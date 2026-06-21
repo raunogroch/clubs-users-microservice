@@ -79,29 +79,14 @@ model User {
 
   status                UserStatus          @default(PENDING)
 
-  
-  
-  
-
   lastLoginAt           DateTime?          
-
   failedLoginAttempts   Int                 @default(0)
-
   blockedUntil          DateTime?          
 
-  
-  
-  
-
-  roles                 UserRole[]
-
-  assignments           UserAssignment[]
+  userMemberships       UserMembership[]
 
   files                 UserFile[]
 
-  
-  
-  
 
   createdAt             DateTime            @default(now())
 
@@ -122,63 +107,12 @@ model User {
 
 
 
-
-
-model UserRole {
-  id            String      @id @default(uuid())
-
-  userId        String     
-
-  role          Role
-
-  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  createdAt     DateTime    @default(now())
-
-  @@unique([userId, role])
-
-  @@index([role])
-
-  @@map("user_roles")
-}
-
 enum MembershipStatus {
   ACTIVE
   INVITED
   SUSPENDED
   REMOVED
 }
-
-model UserAssignment {
-  id              String              @id @default(uuid())
-
-  userId          String             
-
-  assignmentId    String             
-
-  status          MembershipStatus    @default(ACTIVE)
-
-  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  createdAt       DateTime            @default(now())
-
-  updatedAt       DateTime            @updatedAt
-
-  available       DateTime?          
-
-  @@unique([userId, assignmentId])
-
-  @@index([assignmentId])
-
-  @@index([status])
-
-  @@index([available])
-
-  @@map("user_assignments")
-}
-
-
-
 
 
 model UserFile {
@@ -202,4 +136,24 @@ model UserFile {
   @@index([available])
 
   @@map("user_files")
+}
+
+model UserMembership {
+  id            String            @id @default(cuid())
+
+  userId        String
+  assignmentId  String?           // null para SUPER_ADMIN y ADMIN
+
+  role          Role
+
+  status        MembershipStatus  @default(ACTIVE)
+
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, assignmentId, role])
+  @@index([assignmentId])
+  @@index([userId])
 }
