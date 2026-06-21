@@ -166,4 +166,40 @@ export class UsersRepository {
       include: { userMemberships: true },
     });
   }
+
+  deleteUserMembership(
+    userId: string,
+    assignmentId: string,
+    role: $Enums.Role,
+  ) {
+    return this.prisma.userMembership.deleteMany({
+      where: {
+        userId,
+        assignmentId,
+        role,
+      },
+    });
+  }
+
+  findEmptyMembership(userId: string, role: $Enums.Role) {
+    return this.prisma.userMembership.findFirst({
+      where: {
+        userId,
+        role,
+        assignmentId: null,
+        status: 'ACTIVE',
+      },
+    });
+  }
+
+  updateMembershipAssignment(membershipId: string, assignmentId: string) {
+    return this.prisma.userMembership.update({
+      where: {
+        id: membershipId,
+      },
+      data: {
+        assignmentId,
+      },
+    });
+  }
 }

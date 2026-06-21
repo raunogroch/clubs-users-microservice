@@ -9,7 +9,7 @@ import {
   UpdateStatusDto,
   UpdatePasswordDto,
 } from './dto';
-import { PaginationDto } from '../common';
+import { PaginationDto, Roles } from '../common';
 import type { UserRoleValidation } from './interfaces';
 
 @Controller()
@@ -73,12 +73,26 @@ export class UsersController {
   }
 
   @MessagePattern('users.adding.assignment')
-  addingAssignment(@Payload() data: { userId: string; assignmentId: string }) {
+  addingAssignment(
+    @Payload()
+    data: {
+      userId: string;
+      assignmentId: string;
+      role: Roles;
+    },
+  ) {
     return this.usersService.addingAssignment(data);
   }
 
   @MessagePattern('users.remove.assignment')
-  removeAssignment(@Payload() data: { userId: string; assignmentId: string }) {
+  removeAssignment(
+    @Payload()
+    data: {
+      userId: string;
+      assignmentId: string;
+      role: Roles;
+    },
+  ) {
     return this.usersService.removeAssignment(data);
   }
 }

@@ -269,31 +269,77 @@ export class UsersService {
     }
   }
 
-  async addingAssignment(data: { userId: string; assignmentId: string }) {
+  async addingAssignment(data: {
+    userId: string;
+    assignmentId: string;
+    role: Roles;
+  }) {
     try {
-      const { userId, assignmentId } = data;
+      const { userId, assignmentId, role } = data;
 
       const userExist = await this.usersRepository.findByIdBasic(userId);
+
       if (!userExist) {
-        throw new RpcException({ message: 'User not found' });
+        throw new RpcException({
+          message: 'User not found',
+        });
       }
 
-      // Create membership with ATHLETE role (default for assignments)
+      // Verificar si ya existe exactamente esa relación
+      const existingMembership = await this.usersRepository.findUserMembership(
+        userId,
+        role,
+        assignmentId,
+      );
+
+      if (existingMembership) {
+        return {
+          message: 'Assignment already assigned',
+        };
+      }
+
+      // Buscar rol existente sin assignment
+      const emptyMembership = await this.usersRepository.findEmptyMembership(
+        userId,
+        role,
+      );
+
+      // Si existe ADMIN con assignmentId = null
+      // reutilizarlo en vez de crear uno nuevo
+      if (emptyMembership) {
+        await this.usersRepository.updateMembershipAssignment(
+          emptyMembership.id,
+          assignmentId,
+        );
+
+        return {
+          message: 'Assignment linked to existing role',
+        };
+      }
+
+      // Si no existe un ADMIN vacío,
+      // crear nuevo registro ADMIN + assignment
       await this.usersRepository.createUserMembership(
         userId,
         assignmentId,
-        Roles.ATHLETE,
+        role,
       );
 
-      return { message: 'Assignment added to user successfully' };
+      return {
+        message: 'Assignment added to user successfully',
+      };
     } catch (err: any) {
       throw new RpcException(err);
     }
   }
 
-  async removeAssignment(data: { userId: string; assignmentId: string }) {
+  async removeAssignment(data: {
+    userId: string;
+    assignmentId: string;
+    role: Roles;
+  }) {
     try {
-      const { userId, assignmentId } = data;
+      const { userId, assignmentId, role } = data;
 
       const userExist = await this.usersRepository.findByIdBasic(userId);
       if (!userExist) {
@@ -301,7 +347,11 @@ export class UsersService {
       }
 
       // Delete all memberships for this user-assignment combo
-      await this.usersRepository.deleteUserMemberships(userId, assignmentId);
+      await this.usersRepository.deleteUserMembership(
+        userId,
+        assignmentId,
+        role,
+      );
 
       return { message: 'Assignment removed from user successfully' };
     } catch (err: any) {
