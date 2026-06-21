@@ -98,7 +98,7 @@ export class UsersService {
 
   async findAll(paginationDto: PaginationDto) {
     try {
-      const { page = 1, limit = 10, search } = paginationDto;
+      const { page = 1, limit = 10, search, role } = paginationDto;
 
       const whereCondition: any = {
         available: true,
@@ -113,6 +113,15 @@ export class UsersService {
           { phone: { contains: search, mode: 'insensitive' } },
           { address: { contains: search, mode: 'insensitive' } },
         ];
+      }
+
+      if (role) {
+        whereCondition.userMemberships = {
+          some: {
+            role: role as any,
+            status: 'ACTIVE',
+          },
+        };
       }
 
       const totalPage =
