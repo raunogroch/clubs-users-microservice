@@ -98,7 +98,13 @@ export class UsersService {
 
   async findAll(paginationDto: PaginationDto) {
     try {
-      const { page = 1, limit = 10, search, role } = paginationDto;
+      const {
+        page = 1,
+        limit = 10,
+        search,
+        role,
+        assignmentId,
+      } = paginationDto;
 
       const whereCondition: any = {
         available: true,
@@ -119,6 +125,7 @@ export class UsersService {
         whereCondition.userMemberships = {
           some: {
             role: role as any,
+            assignmentId: assignmentId,
             status: 'ACTIVE',
           },
         };
