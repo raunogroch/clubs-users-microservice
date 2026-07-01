@@ -37,29 +37,6 @@ CREATE TABLE "users" (
 );
 
 -- CreateTable
-CREATE TABLE "user_roles" (
-    "id" TEXT NOT NULL,
-    "userId" TEXT NOT NULL,
-    "role" "Role" NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "user_roles_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "user_assignments" (
-    "id" TEXT NOT NULL,
-    "userId" TEXT NOT NULL,
-    "assignmentId" TEXT NOT NULL,
-    "status" "MembershipStatus" NOT NULL DEFAULT 'ACTIVE',
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-    "available" TIMESTAMP(3),
-
-    CONSTRAINT "user_assignments_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
 CREATE TABLE "user_files" (
     "id" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
@@ -72,6 +49,19 @@ CREATE TABLE "user_files" (
     CONSTRAINT "user_files_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "UserMembership" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "assignmentId" TEXT,
+    "role" "Role" NOT NULL,
+    "status" "MembershipStatus" NOT NULL DEFAULT 'ACTIVE',
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "UserMembership_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "users_username_key" ON "users"("username");
 
@@ -82,34 +72,22 @@ CREATE INDEX "users_status_idx" ON "users"("status");
 CREATE INDEX "users_available_idx" ON "users"("available");
 
 -- CreateIndex
-CREATE INDEX "user_roles_role_idx" ON "user_roles"("role");
-
--- CreateIndex
-CREATE UNIQUE INDEX "user_roles_userId_role_key" ON "user_roles"("userId", "role");
-
--- CreateIndex
-CREATE INDEX "user_assignments_assignmentId_idx" ON "user_assignments"("assignmentId");
-
--- CreateIndex
-CREATE INDEX "user_assignments_status_idx" ON "user_assignments"("status");
-
--- CreateIndex
-CREATE INDEX "user_assignments_available_idx" ON "user_assignments"("available");
-
--- CreateIndex
-CREATE UNIQUE INDEX "user_assignments_userId_assignmentId_key" ON "user_assignments"("userId", "assignmentId");
-
--- CreateIndex
 CREATE INDEX "user_files_type_idx" ON "user_files"("type");
 
 -- CreateIndex
 CREATE INDEX "user_files_available_idx" ON "user_files"("available");
 
--- AddForeignKey
-ALTER TABLE "user_roles" ADD CONSTRAINT "user_roles_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+-- CreateIndex
+CREATE INDEX "UserMembership_assignmentId_idx" ON "UserMembership"("assignmentId");
 
--- AddForeignKey
-ALTER TABLE "user_assignments" ADD CONSTRAINT "user_assignments_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+-- CreateIndex
+CREATE INDEX "UserMembership_userId_idx" ON "UserMembership"("userId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "UserMembership_userId_assignmentId_role_key" ON "UserMembership"("userId", "assignmentId", "role");
 
 -- AddForeignKey
 ALTER TABLE "user_files" ADD CONSTRAINT "user_files_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "UserMembership" ADD CONSTRAINT "UserMembership_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;

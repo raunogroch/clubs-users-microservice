@@ -19,6 +19,61 @@ export class UsersRepository {
     });
   }
 
+  createWithMemberships(
+    data: Prisma.UserCreateInput,
+    memberships: Array<{
+      assignmentId: string | null;
+      role: $Enums.Role;
+      status?: $Enums.MembershipStatus;
+    }>,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data,
+        include: { userMemberships: true },
+      });
+
+      if (memberships.length > 0) {
+        await tx.userMembership.createMany({
+          data: memberships.map((membership) => ({
+            userId: user.id,
+            assignmentId: membership.assignmentId,
+            role: membership.role,
+            status: membership.status || 'ACTIVE',
+          })),
+        });
+      }
+
+      return user;
+    });
+  }
+
+  replaceUserMemberships(
+    userId: string,
+    memberships: Array<{
+      assignmentId: string | null;
+      role: $Enums.Role;
+      status?: $Enums.MembershipStatus;
+    }>,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.userMembership.deleteMany({
+        where: { userId },
+      });
+
+      if (memberships.length > 0) {
+        await tx.userMembership.createMany({
+          data: memberships.map((membership) => ({
+            userId,
+            assignmentId: membership.assignmentId,
+            role: membership.role,
+            status: membership.status || 'ACTIVE',
+          })),
+        });
+      }
+    });
+  }
+
   countByCondition(whereCondition: any) {
     return this.prisma.user.count({
       where: whereCondition,

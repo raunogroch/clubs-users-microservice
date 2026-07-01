@@ -1,20 +1,17 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { LoginDto, RegisterDto } from './dto';
-import { NATS_SERVICE, envs } from '../config';
-import { ClientProxy, RpcException } from '@nestjs/microservices';
+import { RpcException } from '@nestjs/microservices';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { JwtPayload } from './interfaces/jwt-payload.interfaces';
 import { Roles } from '../common';
+import { envs } from '../config';
 import { AuthRepository } from './auth.repository';
-import { PrismaService } from '../prisma.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly authRepository: AuthRepository,
-    private readonly prisma: PrismaService,
-    @Inject(NATS_SERVICE) private readonly client: ClientProxy,
     private readonly jwtService: JwtService,
   ) {}
 
@@ -29,54 +26,43 @@ export class AuthService {
 
       const { memberships, ...userData } = registerDto;
 
-      const userNew = await this.authRepository.create({
-        name: userData.name,
-        lastname: userData.lastname,
-        username: userData.username,
-        password: await bcrypt.hashSync(userData.password, 10),
-        status: userData.status,
-      });
+      const createdUser = await this.authRepository.createWithMemberships(
+        {
+          name: userData.name,
+          lastname: userData.lastname,
+          username: userData.username,
+          password: await bcrypt.hash(userData.password, 10),
+          status: userData.status,
+        },
+        (memberships || []).map((membership) => ({
+          assignmentId: membership.assignmentId || null,
+          role: membership.role as any,
+          status: membership.status,
+        })),
+      );
 
-      // Create memberships if provided
-      let userMemberships: any[] = [];
-      let jwtRoles: string[] = [];
-
-      if (memberships && memberships.length > 0) {
-        for (const membership of memberships) {
-          // Use provided assignmentId or null if not provided
-          const assignmentId = membership.assignmentId || null;
-          const status = membership.status || 'ACTIVE';
-
-          const created = await this.prisma.userMembership.create({
-            data: {
-              userId: userNew.id,
-              assignmentId,
-              role: membership.role as any,
-              status,
-            },
-          });
-          userMemberships.push({
-            assignmentId: created.assignmentId,
-            role: created.role,
-            status: created.status,
-          });
-          jwtRoles.push(created.role);
-        }
-      }
+      const userMemberships = createdUser.userMemberships || [];
+      const jwtRoles = userMemberships.map((membership) => membership.role);
 
       return {
         user: {
-          id: userNew.id,
-          name: userNew.name,
-          lastname: userNew.lastname,
-          username: userNew.username,
+          id: createdUser.id,
+          name: createdUser.name,
+          lastname: createdUser.lastname,
+          username: createdUser.username,
         },
-        ...(userMemberships.length > 0 && { memberships: userMemberships }),
+        ...(userMemberships.length > 0 && {
+          memberships: userMemberships.map((membership) => ({
+            assignmentId: membership.assignmentId,
+            role: membership.role,
+            status: membership.status,
+          })),
+        }),
         token: await this.signJWT({
-          id: userNew.id,
-          name: userNew.name || '',
-          lastname: userNew.lastname || '',
-          username: userNew.username,
+          id: createdUser.id,
+          name: createdUser.name || '',
+          lastname: createdUser.lastname || '',
+          username: createdUser.username,
           roles: jwtRoles,
         }),
       };
@@ -118,14 +104,8 @@ export class AuthService {
       });
     }
 
-    // Get user memberships (new model)
     const memberships = existingUser.userMemberships || [];
-    const hasMemberships = memberships.length > 0;
-
-    // Determine JWT roles: from memberships if available, otherwise from legacy roles
-    const jwtRoles = hasMemberships
-      ? memberships.map((m) => m.role)
-      : existingUser.roles?.map((r) => r.role) || [];
+    const jwtRoles = memberships.map((m) => m.role);
 
     return {
       user: {
@@ -134,7 +114,7 @@ export class AuthService {
         lastname: existingUser.lastname,
         username: existingUser.username,
       },
-      ...(hasMemberships && {
+      ...(memberships.length > 0 && {
         memberships: memberships.map((m) => ({
           assignmentId: m.assignmentId,
           role: m.role,
@@ -153,11 +133,9 @@ export class AuthService {
 
   async selectContext(userId: string, role: string, assignmentId?: string) {
     try {
-      // Validate role
       const roleEnum = role as any;
       const isGlobalRole = [Roles.SUPER_ADMIN, Roles.ADMIN].includes(roleEnum);
 
-      // For non-global roles, assignmentId is required
       if (!isGlobalRole && !assignmentId) {
         throw new RpcException({
           status: 400,
@@ -165,16 +143,11 @@ export class AuthService {
         });
       }
 
-      // Verify user has this membership
-      const membership = await this.prisma.userMembership.findFirst({
-        where: {
-          userId,
-          role: roleEnum,
-          status: 'ACTIVE',
-          ...(assignmentId && { assignmentId }),
-          ...(!assignmentId && isGlobalRole && { assignmentId: null }),
-        },
-      });
+      const membership = await this.authRepository.findActiveMembership(
+        userId,
+        roleEnum,
+        assignmentId,
+      );
 
       if (!membership) {
         throw new RpcException({
@@ -183,10 +156,7 @@ export class AuthService {
         });
       }
 
-      // Get full user info
-      const user = await this.prisma.user.findUnique({
-        where: { id: userId },
-      });
+      const user = await this.authRepository.findById(userId);
 
       if (!user) {
         throw new RpcException({
@@ -195,7 +165,6 @@ export class AuthService {
         });
       }
 
-      // Generate contextual JWT
       const jwtPayload: any = {
         sub: user.id,
         username: user.username,
@@ -204,15 +173,12 @@ export class AuthService {
         role,
       };
 
-      // Include assignmentId only if provided
       if (assignmentId) {
         jwtPayload.assignmentId = assignmentId;
       }
 
-      const contextualJwt = this.jwtService.sign(jwtPayload);
-
       return {
-        token: contextualJwt,
+        token: this.jwtService.sign(jwtPayload),
       };
     } catch (err: any) {
       if (err instanceof RpcException) {

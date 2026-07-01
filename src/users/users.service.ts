@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import {
   CreateUserDto,
   UploadImageDto,
@@ -7,8 +7,7 @@ import {
   UpdateUserDto,
   UpdatePasswordDto,
 } from './dto';
-import { NATS_SERVICE } from '../config';
-import { ClientProxy, RpcException } from '@nestjs/microservices';
+import { RpcException } from '@nestjs/microservices';
 import { PaginationDto, Roles } from '../common';
 import * as bcrypt from 'bcrypt';
 import type { UserRoleValidation } from './interfaces';
@@ -20,7 +19,6 @@ export class UsersService {
   constructor(
     private readonly usersRepository: UsersRepository,
     private readonly prisma: PrismaService,
-    @Inject(NATS_SERVICE) private readonly client: ClientProxy,
   ) {}
 
   async create(createUserDto: CreateUserDto) {
@@ -34,48 +32,21 @@ export class UsersService {
       }
 
       const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
-
       const { memberships, password, ...userFields } = createUserDto;
 
-      // Create user WITHOUT legacy roles
-      const createdUser = await this.usersRepository.create({
-        ...userFields,
-        password: hashedPassword,
-      });
+      const createdUser = await this.usersRepository.createWithMemberships(
+        {
+          ...userFields,
+          password: hashedPassword,
+        },
+        (memberships || []).map((membership) => ({
+          assignmentId: membership.assignmentId || null,
+          role: membership.role as any,
+          status: membership.status as any,
+        })),
+      );
 
-      // Create memberships if provided
-      let userMemberships: any[] = [];
-
-      if (memberships && memberships.length > 0) {
-        for (const membership of memberships) {
-          // Use provided assignmentId or null if not provided
-          const assignmentId = membership.assignmentId || null;
-          const status = (membership.status as any) || 'ACTIVE';
-
-          const created = await this.usersRepository.createUserMembership(
-            createdUser.id,
-            assignmentId,
-            membership.role as any,
-            status,
-          );
-
-          userMemberships.push({
-            assignmentId: created.assignmentId,
-            role: created.role,
-            status: created.status,
-          });
-        }
-      }
-
-      // Return user with memberships
-      return {
-        id: createdUser.id,
-        username: createdUser.username,
-        name: createdUser.name,
-        lastname: createdUser.lastname,
-        status: createdUser.status,
-        ...(userMemberships.length > 0 && { memberships: userMemberships }),
-      };
+      return this.formatUserResponse(createdUser);
     } catch (err: any) {
       throw new RpcException(err);
     }
@@ -175,31 +146,16 @@ export class UsersService {
 
       const updatedUser = await this.usersRepository.update(id, data);
 
-      // If memberships are provided, update them
       if (memberships && memberships.length > 0) {
-        // Get existing memberships to find all assignments
-        const existingMemberships =
-          await this.usersRepository.getUserMemberships(id);
+        await this.usersRepository.replaceUserMemberships(
+          id,
+          memberships.map((membership) => ({
+            assignmentId: membership.assignmentId || null,
+            role: membership.role as any,
+            status: membership.status as any,
+          })),
+        );
 
-        // Delete all existing memberships (handle both null and non-null assignmentIds)
-        await this.prisma.userMembership.deleteMany({
-          where: { userId: id },
-        });
-
-        // Create new memberships
-        for (const membership of memberships) {
-          const assignmentId = membership.assignmentId || null;
-          const status = (membership.status as any) || 'ACTIVE';
-
-          await this.usersRepository.createUserMembership(
-            id,
-            assignmentId,
-            membership.role as any,
-            status,
-          );
-        }
-
-        // Fetch updated user with new memberships
         const finalUser = await this.usersRepository.findById(id);
         return this.formatUserResponse(finalUser);
       }

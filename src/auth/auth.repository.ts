@@ -17,7 +17,6 @@ export class AuthRepository {
       where: { username },
       include: {
         userMemberships: { where: { status: 'ACTIVE' } },
-        roles: true,
       },
     });
   }
@@ -30,7 +29,11 @@ export class AuthRepository {
 
   createWithMemberships(
     userData: Prisma.UserCreateInput,
-    memberships: Array<{ assignmentId: string; role: $Enums.Role }>,
+    memberships: Array<{
+      assignmentId: string | null;
+      role: $Enums.Role;
+      status?: $Enums.MembershipStatus;
+    }>,
   ) {
     return this.prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
@@ -38,19 +41,46 @@ export class AuthRepository {
         include: { userMemberships: true },
       });
 
-      // Create UserMembership entries
       if (memberships.length > 0) {
         await tx.userMembership.createMany({
           data: memberships.map((m) => ({
             userId: user.id,
             assignmentId: m.assignmentId,
             role: m.role,
-            status: 'ACTIVE',
+            status: m.status || 'ACTIVE',
           })),
         });
       }
 
       return user;
+    });
+  }
+
+  findById(id: string) {
+    return this.prisma.user.findUnique({
+      where: { id },
+    });
+  }
+
+  findActiveMembership(
+    userId: string,
+    role: $Enums.Role,
+    assignmentId?: string,
+  ) {
+    const whereClause: any = {
+      userId,
+      role,
+      status: 'ACTIVE',
+    };
+
+    if (assignmentId) {
+      whereClause.assignmentId = assignmentId;
+    } else {
+      whereClause.assignmentId = null;
+    }
+
+    return this.prisma.userMembership.findFirst({
+      where: whereClause,
     });
   }
 }
